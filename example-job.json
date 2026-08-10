@@ -1,0 +1,23 @@
+{
+  "mode": "dry_run",
+  "chain": {
+    "chain_id": 8453,
+    "rpcs": [
+      "https://mainnet.base.org",
+      "https://base.llamarpc.com",
+      "https://base.drpc.org"
+    ],
+    "eas": "0x4200000000000000000000000000000000000021"
+  },
+  "schema": {
+    "uid": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "definition": "uint256 totalSupply,uint64 blockNumber",
+    "revocable": true
+  },
+  "collect": [
+    { "type": "erc20_total_supply", "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+    { "type": "block_number" }
+  ],
+  "min_agree": 2,
+  "blocks_behind": 4
+}

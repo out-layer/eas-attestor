@@ -1,0 +1,21 @@
+{
+  "mode": "dry_run",
+  "chain": { "network": "base" },
+  "schema": {
+    "definition": "uint256 lockedOnEthereum,uint256 mintedSupply,bytes32 tokenCodeHash,uint64 blockNumber"
+  },
+  "collect": [
+    {
+      "type": "erc20_balance",
+      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "holder": "0xcEe284F754E854890e311e3280b767F80797180d",
+      "chain_id": 1,
+      "rpcs": ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org", "https://rpc.mevblocker.io"]
+    },
+    { "type": "erc20_total_supply", "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "chain_id": 8453 },
+    { "type": "eth_code", "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "returns": "code_hash" },
+    { "type": "block_number" }
+  ],
+  "min_agree": 2,
+  "blocks_behind": 4
+}

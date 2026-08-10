@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEE-attested data → EAS | OutLayer</title>
+<style>
+  :root {
+    --accent: #cc6600;
+    --accent-soft: #cc660018;
+    --bg: #ffffff;
+    --fg: #16130f;
+    --muted: #6b6257;
+    --line: #e6e0d8;
+    --card: #faf8f5;
+    --code-bg: #f4f1ec;
+    --ok: #1a7f4b;
+    --err: #b3261e;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14120f; --fg: #f2ede6; --muted: #a1988c; --line: #2e2922;
+      --card: #1c1915; --code-bg: #221e19;
+      --ok: #4ade80; --err: #f87171; --accent-soft: #cc660022;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 96px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+  h1 { font-size: 24px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0; max-width: 60ch; }
+  section { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px; background: var(--card); }
+  section > h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--muted); margin: 0 0 14px; font-weight: 600;
+  }
+  section > h2 b { color: var(--accent); font-weight: 700; margin-right: 6px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 14px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; resize: vertical; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .row > div { flex: 1 1 200px; min-width: 0; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .hint code, code.inline { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+  button {
+    font: inherit; font-weight: 550; padding: 9px 16px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.small { padding: 5px 10px; font-size: 13px; font-weight: 500; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .collector {
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+    background: var(--bg);
+  }
+  .collector-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .collector-head .idx {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent);
+    background: var(--accent-soft); padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+  }
+  .collector-head select { flex: 0 1 220px; }
+  .collector-head .spacer { flex: 1; }
+  details.adv { margin-top: 8px; }
+  details.adv summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  details.adv[open] summary { margin-bottom: 10px; }
+  pre {
+    background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto;
+    font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; margin: 0; line-height: 1.5;
+  }
+  .out-head { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; }
+  .out-head h3 { font-size: 13px; margin: 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .status { padding: 10px 14px; border-radius: 8px; margin-top: 14px; font-size: 14px; display: none; }
+  .status.show { display: block; }
+  .status.ok { background: #1a7f4b18; border: 1px solid #1a7f4b55; }
+  .status.err { background: #b3261e18; border: 1px solid #b3261e55; }
+  .status.info { background: var(--accent-soft); border: 1px solid #cc660055; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+  a { color: var(--accent); }
+  .pill {
+    display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 20px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  }
+  .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .scroll-x { overflow-x: auto; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Publish <span>TEE-attested</span> data to EAS</h1>
+  <p class="sub">
+    Configure what to read from any EVM chain. An OutLayer worker fetches it inside an Intel TDX
+    enclave through an independent-RPC quorum, signs it with a key that never leaves the enclave, and
+    writes an attestation to the Ethereum Attestation Service. Every result is publicly verifiable —
+    on the chain's EAS explorer and against the worker's attestation at
+    <a href="https://workers.outlayer.ai" target="_blank" rel="noopener">workers.outlayer.ai</a>.
+  </p>
+</header>
+
+<section>
+  <h2><b>1</b> Network</h2>
+  <div class="row">
+    <div>
+      <label for="network">Target chain</label>
+      <select id="network">
+        <option value="base-sepolia" selected>Base Sepolia — testnet, faucet gas (start here)</option>
+        <option value="base">Base — mainnet (where EAS actually lives)</option>
+        <option value="optimism">Optimism — mainnet</option>
+        <option value="arbitrum">Arbitrum One — mainnet</option>
+        <option value="ethereum">Ethereum — mainnet</option>
+        <option value="sepolia">Sepolia — testnet, faucet gas</option>
+      </select>
+    </div>
+    <div>
+      <label>Resolved EAS contract</label>
+      <input id="easAddr" readonly>
+    </div>
+  </div>
+  <p class="hint" id="netHint"></p>
+</section>
+
+<section>
+  <h2><b>2</b> What to attest</h2>
+  <div class="preset-row">
+    <button class="small" data-preset="por-xchain">Cross-chain proof of reserves</button>
+    <button class="small" data-preset="supply">Token supply snapshot</button>
+    <button class="small" data-preset="bytecode">Contract bytecode fact</button>
+  </div>
+  <label for="schemaDef">EAS schema definition</label>
+  <input id="schemaDef" value="uint256 lockedOnEthereum,uint256 mintedSupply,uint64 blockNumber"
+         spellcheck="false">
+  <p class="hint">
+    Comma-separated Solidity types and names — the standard EAS schema format. Supported types:
+    <code>uint*</code>, <code>address</code>, <code>bool</code>, <code>bytes32</code>,
+    <code>bytes</code>, <code>string</code>. Each field needs one data source below, in the same order.
+  </p>
+
+  <div class="row" style="margin-top:14px">
+    <div>
+      <label for="schemaUid">Schema UID <span style="opacity:.7">(leave empty to register a new one)</span></label>
+      <input id="schemaUid" placeholder="0x… — required to attest" spellcheck="false">
+    </div>
+    <div>
+      <label for="refUid">Reference UID <span style="opacity:.7">(optional — link the worker-identity attestation)</span></label>
+      <input id="refUid" placeholder="0x…" spellcheck="false">
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><b>3</b> Data sources</h2>
+  <div id="collectors"></div>
+  <div class="actions">
+    <button class="small" id="addCollector">+ Add source</button>
+    <span class="hint" id="matchHint" style="margin:0"></span>
+  </div>
+  <p class="hint">
+    Every source is read from several independent RPCs pinned to the same block; if they disagree,
+    the job refuses rather than attest a number one node could have fabricated. A source can target a
+    <b>different chain</b> than the attestation — that is how one attestation compares value locked on
+    one chain against supply minted on another.
+  </p>
+</section>
+
+<section>
+  <h2><b>4</b> Attester key</h2>
+  <div class="row">
+    <div>
+      <label for="keyMode">Where the signing key comes from</label>
+      <select id="keyMode">
+        <option value="tee" selected>Generated inside the TEE — recommended</option>
+        <option value="own">I supply my own key</option>
+      </select>
+    </div>
+    <div>
+      <label for="keyEnv">Secret name</label>
+      <input id="keyEnv" value="PROTECTED_EAS_KEY" spellcheck="false">
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="secretsProfile">Secrets profile</label>
+      <input id="secretsProfile" value="eas" spellcheck="false">
+    </div>
+    <div>
+      <label for="secretsAccount">Secrets owner <span style="opacity:.7">(the NEAR account that stored them)</span></label>
+      <input id="secretsAccount" placeholder="you.near" spellcheck="false">
+    </div>
+  </div>
+  <p class="hint" id="keyHint"></p>
+  <div class="actions" style="margin-top:12px">
+    <button class="small" id="openSecrets">Create this secret in the dashboard →</button>
+  </div>
+  <p class="hint">
+    Secrets are created on app.outlayer.ai: the value is encrypted in your browser against the
+    enclave's key and stored on-chain by your wallet. The link above carries only the shape — project,
+    profile, secret name — never a value. A private key must never travel in a URL.
+  </p>
+</section>
+
+<section>
+  <h2><b>5</b> How to run it</h2>
+  <div class="row">
+    <div>
+      <label for="project">OutLayer project <span style="opacity:.7">(owner/name)</span></label>
+      <input id="project" placeholder="owner.near/eas-attestor" spellcheck="false">
+    </div>
+    <div>
+      <label for="paymentKey">Payment key <span style="opacity:.7">(enables the HTTPS path)</span></label>
+      <input id="paymentKey" type="password" placeholder="owner:nonce:secret" spellcheck="false"
+             autocomplete="off">
+    </div>
+  </div>
+  <p class="hint">
+    With a payment key the run goes over the <b>HTTPS API</b> — no wallet, no on-chain transaction to
+    start it. Leave it empty to get the on-chain <code>request_execution</code> call to send from your
+    own wallet or CLI instead. The key is used only by this page in your browser to sign the request;
+    it is never stored or sent anywhere else.
+  </p>
+
+  <div class="actions" style="margin-top:16px">
+    <button class="primary" id="runDry">Dry run — no broadcast</button>
+    <button id="runRegister">Register schema</button>
+    <button id="runAttest">Attest on-chain</button>
+  </div>
+  <div class="status" id="status"></div>
+</section>
+
+<section>
+  <h2>Result</h2>
+  <div id="result">
+    <p class="hint" style="margin:0">Run something above and the evidence, calldata and explorer links land here.</p>
+  </div>
+
+  <div class="out-head">
+    <h3>Job JSON</h3>
+    <button class="small" data-copy="jobJson">Copy</button>
+  </div>
+  <pre id="jobJson"></pre>
+
+  <div class="out-head">
+    <h3>Same thing from a terminal</h3>
+    <button class="small" data-copy="curlCmd">Copy</button>
+  </div>
+  <pre id="curlCmd"></pre>
+</section>
+
+<footer>
+  Runs the open-source <code class="inline">eas-attestor</code> WASI job on
+  <a href="https://outlayer.ai" target="_blank" rel="noopener">OutLayer</a>.
+  Verify the enclave at <a href="https://workers.outlayer.ai" target="_blank" rel="noopener">workers.outlayer.ai</a>.
+</footer>
+
+</div>
+
+<script>
+"use strict";
+
+// EAS deployments, verified against the official eas-contracts repository.
+const NETWORKS = {
+  "base":         { chainId: 8453,     eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base.easscan.org",         explorer: "basescan.org",             testnet: false },
+  "base-sepolia": { chainId: 84532,    eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base-sepolia.easscan.org", explorer: "sepolia.basescan.org",     testnet: true  },
+  "optimism":     { chainId: 10,       eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "optimism.easscan.org",    explorer: "optimistic.etherscan.io",  testnet: false },
+  "arbitrum":     { chainId: 42161,    eas: "0xbD75f629A22Dc1ceD33dDA0b68c546A1c035c458", registry: "0xA310da9c5B885E7fb3fbA9D66E9Ba6Df512b78eB", scan: "arbitrum.easscan.org",    explorer: "arbiscan.io",              testnet: false },
+  "ethereum":     { chainId: 1,        eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587", registry: "0xA7b39296258348C78294F95B872b282326A97BDF", scan: "easscan.org",             explorer: "etherscan.io",             testnet: false },
+  "sepolia":      { chainId: 11155111, eas: "0xC2679fBD37d54388Ce493F1DB75320D236e1815e", registry: "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0", scan: "sepolia.easscan.org",     explorer: "sepolia.etherscan.io",     testnet: true  },
+};
+
+// Public RPC sets used when a source targets a chain other than the attestation's own.
+const PUBLIC_RPCS = {
+  1:     ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org", "https://rpc.mevblocker.io"],
+  8453:  ["https://mainnet.base.org", "https://base.llamarpc.com", "https://base.drpc.org"],
+  10:    ["https://mainnet.optimism.io", "https://optimism.drpc.org", "https://optimism.llamarpc.com"],
+  42161: ["https://arb1.arbitrum.io/rpc", "https://arbitrum.drpc.org", "https://arbitrum.llamarpc.com"],
+};
+
+const SOURCE_TYPES = {
+  erc20_balance:      { label: "ERC-20 balance of an address", fields: ["token", "holder"] },
+  erc20_total_supply: { label: "ERC-20 total supply",          fields: ["token"] },
+  native_balance:     { label: "Native coin balance",          fields: ["address"] },
+  evm_call:           { label: "Arbitrary eth_call",           fields: ["to", "data", "returns"] },
+  eth_code:           { label: "Contract bytecode fact",       fields: ["address", "returns_code"] },
+  block_number:       { label: "Block number (no RPC read)",   fields: [] },
+  tee_attestation:    { label: "Link to this run's TEE quote",  fields: ["returns_tee"] },
+};
+
+const FIELD_LABEL = {
+  token: "Token contract", holder: "Holder address", address: "Address",
+  to: "Contract", data: "Calldata (0x…)", returns: "Return type", returns_code: "Report",
+  returns_tee: "Form",
+};
+
+const PRESETS = {
+  "por-xchain": {
+    schema: "uint256 lockedOnEthereum,uint256 mintedSupply,uint64 blockNumber",
+    collectors: [
+      { type: "erc20_balance", token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        holder: "0xcEe284F754E854890e311e3280b767F80797180d", chainId: "1" },
+      { type: "erc20_total_supply", token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", chainId: "" },
+      { type: "block_number" },
+    ],
+  },
+  "supply": {
+    schema: "uint256 totalSupply,uint64 blockNumber",
+    collectors: [
+      { type: "erc20_total_supply", token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", chainId: "" },
+      { type: "block_number" },
+    ],
+  },
+  "bytecode": {
+    schema: "bytes32 codeHash,bool isContract,uint64 blockNumber",
+    collectors: [
+      { type: "eth_code", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", returns_code: "code_hash", chainId: "" },
+      { type: "eth_code", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", returns_code: "is_contract", chainId: "" },
+      { type: "block_number" },
+    ],
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+let collectors = [];
+
+// ---- schema parsing --------------------------------------------------------
+
+function parseSchema(def) {
+  return def.split(",").map((p) => p.trim()).filter(Boolean).map((part) => {
+    const bits = part.split(/\s+/);
+    return { ty: bits[0] || "", name: bits[1] || "" };
+  });
+}
+
+// ---- collector UI ----------------------------------------------------------
+
+function collectorRow(c, i) {
+  const fields = parseSchema($("schemaDef").value);
+  const field = fields[i];
+  const spec = SOURCE_TYPES[c.type] || SOURCE_TYPES.erc20_balance;
+
+  const el = document.createElement("div");
+  el.className = "collector";
+
+  const head = document.createElement("div");
+  head.className = "collector-head";
+  const idx = document.createElement("span");
+  idx.className = "idx";
+  idx.textContent = field ? `${field.ty} ${field.name}` : `field ${i + 1} — not in schema`;
+  head.appendChild(idx);
+
+  const sel = document.createElement("select");
+  for (const [k, v] of Object.entries(SOURCE_TYPES)) {
+    const o = document.createElement("option");
+    o.value = k; o.textContent = v.label; o.selected = k === c.type;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => { c.type = sel.value; render(); };
+  head.appendChild(sel);
+
+  head.appendChild(Object.assign(document.createElement("div"), { className: "spacer" }));
+
+  const del = document.createElement("button");
+  del.className = "small"; del.textContent = "Remove";
+  del.onclick = () => { collectors.splice(i, 1); render(); };
+  head.appendChild(del);
+  el.appendChild(head);
+
+  if (spec.fields.length) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.marginBottom = "0";
+    for (const f of spec.fields) {
+      const wrap = document.createElement("div");
+      const lab = document.createElement("label");
+      lab.textContent = FIELD_LABEL[f] || f;
+      wrap.appendChild(lab);
+
+      if (f === "returns" || f === "returns_code" || f === "returns_tee") {
+        const s = document.createElement("select");
+        const opts = f === "returns"
+          ? ["uint256", "address", "bool", "bytes32"]
+          : f === "returns_code"
+            ? ["code_hash", "is_contract", "code_size"]
+            : ["url", "call_id"];
+        for (const o of opts) {
+          const oe = document.createElement("option");
+          oe.value = o; oe.textContent = o; oe.selected = c[f] === o;
+          s.appendChild(oe);
+        }
+        s.onchange = () => { c[f] = s.value; sync(); };
+        if (!c[f]) c[f] = opts[0];
+        wrap.appendChild(s);
+      } else {
+        const inp = document.createElement("input");
+        inp.value = c[f] || ""; inp.spellcheck = false;
+        inp.placeholder = f === "data" ? "0x…" : "0x…";
+        inp.oninput = () => { c[f] = inp.value.trim(); sync(); };
+        wrap.appendChild(inp);
+      }
+      row.appendChild(wrap);
+    }
+    el.appendChild(row);
+  }
+
+  if (c.type !== "block_number") {
+    const adv = document.createElement("details");
+    adv.className = "adv";
+    if (c.chainId || c.rpcs) adv.open = true;
+    const sum = document.createElement("summary");
+    sum.textContent = "Read this from a different chain";
+    adv.appendChild(sum);
+
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.marginBottom = "0";
+
+    const cw = document.createElement("div");
+    cw.innerHTML = '<label>Chain ID <span style="opacity:.7">(empty = same chain as the attestation)</span></label>';
+    const ci = document.createElement("input");
+    ci.value = c.chainId || ""; ci.placeholder = "1";
+    ci.oninput = () => {
+      c.chainId = ci.value.trim();
+      if (PUBLIC_RPCS[c.chainId] && !c.rpcs) { c.rpcs = PUBLIC_RPCS[c.chainId].join("\n"); render(); }
+      else sync();
+    };
+    cw.appendChild(ci);
+    row.appendChild(cw);
+
+    const rw = document.createElement("div");
+    rw.style.flexBasis = "100%";
+    rw.innerHTML = '<label>RPC endpoints for that chain — one per line</label>';
+    const rt = document.createElement("textarea");
+    rt.rows = 3; rt.value = c.rpcs || "";
+    rt.placeholder = "https://…\nhttps://…\n\nAn API key in the URL can be referenced as ${SECRET_NAME}";
+    rt.oninput = () => { c.rpcs = rt.value; sync(); };
+    rw.appendChild(rt);
+    row.appendChild(rw);
+
+    adv.appendChild(row);
+    el.appendChild(adv);
+  }
+
+  return el;
+}
+
+function render() {
+  const host = $("collectors");
+  host.innerHTML = "";
+  collectors.forEach((c, i) => host.appendChild(collectorRow(c, i)));
+  sync();
+}
+
+// ---- job JSON --------------------------------------------------------------
+
+function buildJob(mode) {
+  const netName = $("network").value;
+  const net = NETWORKS[netName];
+  const job = { mode, chain: { network: netName } };
+
+  const schemaDef = $("schemaDef").value.trim();
+  job.schema = { definition: schemaDef, revocable: true };
+
+  const uid = $("schemaUid").value.trim();
+  if (uid && mode !== "register_schema") job.schema.uid = uid;
+  const ref = $("refUid").value.trim();
+  if (ref && mode !== "register_schema") job.schema.ref_uid = ref;
+  if (mode === "register_schema") job.schema.resolver = "0x0";
+
+  const keyEnv = $("keyEnv").value.trim();
+  if (keyEnv) job.key_env = keyEnv;
+
+  if (mode !== "register_schema") {
+    job.collect = collectors.map((c) => {
+      const item = { type: c.type };
+      const spec = SOURCE_TYPES[c.type];
+      for (const f of spec.fields) {
+        if (f === "returns_code") item.returns = c.returns_code || "code_hash";
+        else if (c[f]) item[f] = c[f];
+      }
+      if (c.chainId) item.chain_id = Number(c.chainId);
+      const rpcs = (c.rpcs || "").split("\n").map((s) => s.trim()).filter(Boolean);
+      if (rpcs.length) item.rpcs = rpcs;
+      return item;
+    });
+    job.min_agree = 2;
+    job.blocks_behind = 4;
+  }
+  return { job, net, netName };
+}
+
+function sync() {
+  const mode = "dry_run";
+  const { job } = buildJob(mode);
+  $("jobJson").textContent = JSON.stringify(job, null, 2);
+
+  const net = NETWORKS[$("network").value];
+  $("easAddr").value = net.eas;
+  $("netHint").innerHTML = net.testnet
+    ? `Testnet — gas comes from a faucet, attestations show up on <a href="https://${net.scan}" target="_blank" rel="noopener">${net.scan}</a>. Rehearse the whole flow here for free before touching mainnet.`
+    : `Mainnet — real gas on chain ${net.chainId}. Attestations appear on <a href="https://${net.scan}" target="_blank" rel="noopener">${net.scan}</a>.`;
+
+  const fields = parseSchema($("schemaDef").value);
+  const n = fields.length, m = collectors.length;
+  const hint = $("matchHint");
+  if (n === m) {
+    hint.innerHTML = `<span class="pill">${m} source${m === 1 ? "" : "s"} · matches the schema</span>`;
+  } else {
+    hint.innerHTML = `<span style="color:var(--err)">Schema has ${n} field${n === 1 ? "" : "s"} but ${m} source${m === 1 ? "" : "s"} configured — they map one-to-one, in order.</span>`;
+  }
+
+  $("keyHint").innerHTML = $("keyMode").value === "tee"
+    ? `The enclave generates the key and it never leaves it — nothing secret passes through this page, your clipboard, or our logs. Create it once as a generated secret, run a dry run to learn the attester address, and send that address a dollar of gas. One transfer, and no private key ever exists outside the enclave.`
+    : `Bring a key you already control. It is encrypted in your browser and only the enclave can decrypt it, but it still passes through this page — so use a key dedicated to attesting, not one guarding real balances. Reusing a funded personal account also ties every attestation to that account's whole history. Never put a private key in a URL.`;
+
+  $("curlCmd").textContent = buildCurl();
+}
+
+function buildCurl() {
+  const { job } = buildJob("dry_run");
+  const project = $("project").value.trim() || "OWNER.near/eas-attestor";
+  const net = NETWORKS[$("network").value];
+  const api = net.testnet ? "https://testnet-api.outlayer.ai" : "https://api.outlayer.ai";
+  const body = JSON.stringify(job);
+  return [
+    `curl -X POST ${api}/call/${project} \\`,
+    `  -H 'Content-Type: application/json' \\`,
+    `  -H 'X-Payment-Key: YOUR_PAYMENT_KEY' \\`,
+    `  -d '${body.replace(/'/g, "'\\''")}'`,
+  ].join("\n");
+}
+
+// ---- status & results ------------------------------------------------------
+
+function setStatus(kind, html) {
+  const s = $("status");
+  s.className = `status show ${kind}`;
+  s.innerHTML = html;
+}
+
+function renderResult(out, netName, envelope, api) {
+  const net = NETWORKS[netName];
+  const host = $("result");
+  host.innerHTML = "";
+
+  // The platform records a TEE quote per execution; surface it whatever the job itself returned.
+  const quoteLink = envelope && envelope.attestation_url
+    ? `<p class="hint" style="margin:10px 0 0">Intel TDX quote for this exact run:
+        <a href="${escapeHtml(api + envelope.attestation_url)}" target="_blank" rel="noopener">${escapeHtml(envelope.attestation_url)}</a></p>`
+    : "";
+
+  if (!out || typeof out !== "object") {
+    host.innerHTML = `<p class="hint" style="margin:0">The worker returned nothing readable.</p>${quoteLink}`;
+    return;
+  }
+  if (out.success === false) {
+    host.innerHTML = `<div class="status show err"><b>The job refused:</b><br>${escapeHtml(out.error || "unknown error")}</div>${quoteLink}`;
+    return;
+  }
+
+  const parts = [];
+  if (out.tx_hash) {
+    parts.push(`<p style="margin:0 0 10px">
+      <b>Attestation sent.</b>
+      <a href="https://${net.explorer}/tx/${out.tx_hash}" target="_blank" rel="noopener">transaction</a> ·
+      <a href="https://${net.scan}/address/${out.attester}" target="_blank" rel="noopener">attester on ${net.scan}</a>
+    </p>`);
+  }
+  if (out.predicted_schema_uid) {
+    parts.push(`<p style="margin:0 0 10px"><b>Schema registered.</b> Its UID —
+      paste it into step 2 to start attesting:</p>
+      <pre>${escapeHtml(out.predicted_schema_uid)}</pre>`);
+  }
+  if (out.attester && !out.tx_hash) {
+    // A dry run is where you learn the address, so make funding it the obvious next move.
+    parts.push(`<div class="status show info" style="margin:0 0 12px">
+      <b>Attester address</b> — send it a little native gas on ${escapeHtml(netName)} and it can attest:
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <code style="font-size:13px">${escapeHtml(out.attester)}</code>
+        <button class="small" id="copyAttester">Copy</button>
+        <a href="https://${net.explorer}/address/${escapeHtml(out.attester)}" target="_blank" rel="noopener">balance</a>
+      </div></div>`);
+  } else if (out.attester) {
+    parts.push(`<p class="hint" style="margin:10px 0 0">Attester: <code>${escapeHtml(out.attester)}</code></p>`);
+  }
+  if (Array.isArray(out.collected) && out.collected.length) {
+    const rows = out.collected.map((c) => `<tr>
+      <td>${escapeHtml(c.field || "")}<br><span class="hint">${escapeHtml(c.type || "")}</span></td>
+      <td class="mono">${escapeHtml(String(c.value_hex ?? c.code_hash ?? c.value ?? ""))}</td>
+      <td class="mono">${escapeHtml(String(c.chain_id ?? "—"))}<br>${escapeHtml(String(c.block ?? ""))}</td>
+      <td class="hint">${escapeHtml((c.agreed_by || []).join(", ")) || "—"}</td>
+    </tr>`).join("");
+    parts.push(`<div class="scroll-x"><table>
+      <tr><th>Field</th><th>Value</th><th>Chain / block</th><th>RPCs that agreed</th></tr>
+      ${rows}</table></div>`);
+  }
+  if (out.attestation_data) {
+    parts.push(`<div class="out-head"><h3>Encoded attestation data</h3></div>
+      <pre>${escapeHtml(out.attestation_data)}</pre>`);
+  }
+  host.innerHTML = (parts.join("") || `<pre>${escapeHtml(JSON.stringify(out, null, 2))}</pre>`) + quoteLink;
+
+  const copyBtn = $("copyAttester");
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      await navigator.clipboard.writeText(out.attester);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+    };
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---- running ---------------------------------------------------------------
+
+async function run(mode) {
+  const { job, netName, net } = buildJob(mode);
+  const project = $("project").value.trim();
+  const paymentKey = $("paymentKey").value.trim();
+
+  if (mode !== "register_schema") {
+    const fields = parseSchema($("schemaDef").value);
+    if (fields.length !== collectors.length) {
+      setStatus("err", "Fix the schema/source mismatch first — each schema field needs exactly one data source.");
+      return;
+    }
+  }
+  if (mode === "attest" && !$("schemaUid").value.trim()) {
+    setStatus("err", "Attesting needs a schema UID. Register the schema first, then paste its UID into step 2.");
+    return;
+  }
+  if (!project) {
+    setStatus("err", "Enter the OutLayer project that runs the attestor, as <code>owner/name</code>.");
+    return;
+  }
+  if (!paymentKey) {
+    setStatus("info", "No payment key, so nothing was sent. Copy the job JSON below and run it from the CLI, or paste a payment key to run it from here.");
+    return;
+  }
+  // The API is strict about this shape, and a malformed key fails with an opaque 400.
+  const kp = paymentKey.split(":");
+  if (kp.length !== 3 || !/^\d+$/.test(kp[1]) || !/^[0-9a-fA-F]{64}$/.test(kp[2])) {
+    setStatus("err", "That payment key does not look right. The format is <code>owner:nonce:key</code>, where the key is exactly 64 hex characters.");
+    return;
+  }
+
+  const api = net.testnet ? "https://testnet-api.outlayer.ai" : "https://api.outlayer.ai";
+  setStatus("info", `Running <code>${mode}</code> in the enclave…`);
+  try {
+    const { envelope, output } = await callApi(api, project, paymentKey, job);
+    if (envelope && envelope.error && !output) {
+      setStatus("err", `The platform reported: ${escapeHtml(envelope.error)}`);
+    } else {
+      setStatus("ok", `Done — <code>${mode}</code> finished.`);
+    }
+    renderResult(output, netName, envelope, api);
+  } catch (e) {
+    setStatus("err", `<b>Could not run it:</b><br>${escapeHtml(e.message || String(e))}
+      <br><br>The job JSON below is still valid — you can run it from a terminal with the command in the last box.`);
+  }
+}
+
+// The coordinator takes the job under an `input` envelope, alongside the reference to the secrets
+// that carry the signing key. We always run async and poll: a synchronous call can outlive the
+// ~100s edge timeout in front of the API and would be cut off mid-execution.
+async function callApi(api, project, paymentKey, job) {
+  const body = {
+    input: job,
+    async: true,
+  };
+  const profile = $("secretsProfile").value.trim();
+  const account = $("secretsAccount").value.trim();
+  if (profile && account) body.secrets_ref = { profile, account_id: account };
+
+  const started = await request(`${api}/call/${project}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Payment-Key": paymentKey },
+    body: JSON.stringify(body),
+  });
+
+  if (!started.call_id) return { envelope: started, output: unwrapOutput(started) };
+
+  // Poll until the worker reports a terminal state.
+  const deadline = Date.now() + 180000;
+  let envelope = started;
+  while (Date.now() < deadline) {
+    const st = String(envelope.status || "").toLowerCase();
+    if (st && !["pending", "running", "queued", "processing"].includes(st)) break;
+    if (envelope.output != null || envelope.error) break;
+    await new Promise((r) => setTimeout(r, 1500));
+    // Polling is ownership-checked against the same payment key that started the call.
+    envelope = await request(`${api}/calls/${envelope.call_id}`, {
+      method: "GET",
+      headers: { "X-Payment-Key": paymentKey },
+    });
+  }
+  return { envelope, output: unwrapOutput(envelope) };
+}
+
+async function request(url, init) {
+  const res = await fetch(url, init);
+  const text = await res.text();
+  if (!res.ok) {
+    // Errors come back as JSON from handlers but as plain text from the rate limiter and from
+    // request-shape rejections, so never assume JSON here.
+    let detail = text.slice(0, 400);
+    try { const j = JSON.parse(text); detail = j.error || detail; } catch { /* plain text */ }
+    if (res.status === 429) throw new Error(`Rate limited (100 requests/minute per IP): ${detail}`);
+    throw new Error(`HTTP ${res.status} — ${detail}`);
+  }
+  try { return JSON.parse(text); } catch { throw new Error(`Unreadable response: ${text.slice(0, 300)}`); }
+}
+
+// The job's own JSON sits in `output`, which may arrive already parsed or as a string.
+function unwrapOutput(envelope) {
+  let v = envelope && envelope.output;
+  if (v == null) return null;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { return { raw: v }; } }
+  // Workers may wrap it once more as {Json: …} / {Text: "…"} depending on the response format.
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    for (const k of ["Json", "json", "Text", "text"]) {
+      if (v[k] != null) {
+        let inner = v[k];
+        if (typeof inner === "string") { try { inner = JSON.parse(inner); } catch { return { raw: inner }; } }
+        return inner;
+      }
+    }
+  }
+  return v;
+}
+
+// ---- wiring ----------------------------------------------------------------
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  $("schemaDef").value = p.schema;
+  collectors = p.collectors.map((c) => {
+    const copy = Object.assign({}, c);
+    if (copy.chainId && PUBLIC_RPCS[copy.chainId]) copy.rpcs = PUBLIC_RPCS[copy.chainId].join("\n");
+    return copy;
+  });
+  render();
+}
+
+document.querySelectorAll("[data-preset]").forEach((b) => {
+  b.onclick = () => applyPreset(b.dataset.preset);
+});
+document.querySelectorAll("[data-copy]").forEach((b) => {
+  b.onclick = async () => {
+    await navigator.clipboard.writeText($(b.dataset.copy).textContent);
+    const old = b.textContent; b.textContent = "Copied"; setTimeout(() => (b.textContent = old), 1200);
+  };
+});
+
+// Hand the secret's SHAPE to the dashboard, which owns the wallet and the enclave's public key.
+// Only non-secret fields travel: which project, which profile, which name, and that the enclave
+// should generate the value itself. No value is ever put in a link.
+$("openSecrets").onclick = () => {
+  const q = new URLSearchParams({
+    project: $("project").value.trim(),
+    profile: $("secretsProfile").value.trim(),
+    name: $("keyEnv").value.trim(),
+  });
+  if ($("keyMode").value === "tee") q.set("generate", "hex32");
+  window.open(`https://app.outlayer.ai/secrets?${q}`, "_blank", "noopener");
+};
+
+$("addCollector").onclick = () => { collectors.push({ type: "erc20_total_supply" }); render(); };
+$("schemaDef").oninput = render;
+$("network").onchange = sync;
+$("keyMode").onchange = sync;
+["schemaUid", "refUid", "keyEnv", "project"].forEach((id) => { $(id).oninput = sync; });
+$("runDry").onclick = () => run("dry_run");
+$("runRegister").onclick = () => run("register_schema");
+$("runAttest").onclick = () => run("attest");
+
+// A shared link may prefill the CONFIG — never a secret. Values like private keys and payment keys
+// are deliberately not readable from the URL.
+(function fromUrl() {
+  const q = new URLSearchParams(location.search);
+  if (q.get("network") && NETWORKS[q.get("network")]) $("network").value = q.get("network");
+  if (q.get("schema")) $("schemaDef").value = q.get("schema");
+  if (q.get("project")) $("project").value = q.get("project");
+  if (q.get("uid")) $("schemaUid").value = q.get("uid");
+  if (q.get("ref")) $("refUid").value = q.get("ref");
+  if (q.get("collect")) {
+    try { collectors = JSON.parse(atob(q.get("collect"))); } catch { /* ignore a malformed link */ }
+  }
+})();
+
+if (!collectors.length) applyPreset("por-xchain");
+render();
+</script>
+</body>
+</html>

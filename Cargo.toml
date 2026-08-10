@@ -1,0 +1,29 @@
+[package]
+name = "eas-attestor"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "TEE-attested data publisher for the Ethereum Attestation Service (EAS) on any EVM chain"
+
+[[bin]]
+name = "eas-attestor"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Outbound HTTP (JSON-RPC) — pure component-model client, builds for wasm32-wasip2.
+wasi-http-client = "0.2"
+
+# EVM primitives, all pure Rust and proven to build for wasm32-wasip2 elsewhere in this repo:
+#   keccak256 (hashing, address derivation, selectors, tx sighash), RLP (typed-tx encoding),
+#   k256 ECDSA with public-key recovery (sign the attestation tx inside the enclave), hex.
+tiny-keccak = { version = "2.0", features = ["keccak"] }
+rlp = "0.5"
+k256 = { version = "0.13", features = ["ecdsa"] }
+hex = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
