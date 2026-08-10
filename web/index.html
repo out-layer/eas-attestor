@@ -227,13 +227,16 @@
   </div>
   <p class="hint" id="keyHint"></p>
   <div class="actions" style="margin-top:12px">
-    <button class="small" id="openSecrets">Create this secret in the dashboard →</button>
+    <button class="small" id="openSecrets">Open the secrets page →</button>
   </div>
   <p class="hint">
-    Secrets are created on app.outlayer.ai: the value is encrypted in your browser against the
-    enclave's key and stored on-chain by your wallet. The link above carries only the shape — project,
-    profile, secret name — never a value. A private key must never travel in a URL.
+    Secrets live on app.outlayer.ai, which holds the wallet and the enclave's public key: the value
+    is encrypted in your browser and stored on-chain by your wallet. The form there does not read
+    settings from a link yet, so enter these by hand — and check the dashboard is on the same network
+    as the run. The project must already exist on-chain, otherwise the transaction reverts with
+    <code>Project '…' does not exist</code>. A private key must never travel in a URL.
   </p>
+  <div id="secretRecipe"></div>
 </section>
 
 <section>
@@ -583,6 +586,18 @@ function sync() {
     : `Bring a key you already control. It is encrypted in your browser and only the enclave can decrypt it, but it still passes through this page — so use a key dedicated to attesting, not one guarding real balances. Reusing a funded personal account also ties every attestation to that account's whole history. Never put a private key in a URL.`;
 
   $("curlCmd").textContent = buildCurl();
+
+  // Mirror the exact values to type into the dashboard form. The link cannot fill them in, so
+  // showing them here is the difference between "go figure it out" and copy-paste.
+  const tee = $("keyMode").value === "tee";
+  $("secretRecipe").innerHTML = `<table>
+    <tr><th>Field in the dashboard</th><th>Value</th></tr>
+    <tr><td>Accessor</td><td class="mono">Project</td></tr>
+    <tr><td>Project ID</td><td class="mono">${escapeHtml($("project").value.trim() || nearNet().project)}</td></tr>
+    <tr><td>Profile</td><td class="mono">${escapeHtml($("secretsProfile").value.trim())}</td></tr>
+    <tr><td>Secret name</td><td class="mono">${escapeHtml($("keyEnv").value.trim())}</td></tr>
+    <tr><td>${tee ? "Generation type" : "Value"}</td><td class="mono">${tee ? "hex32" : "your 32-byte private key, hex"}</td></tr>
+  </table>`;
 }
 
 function buildCurl() {
