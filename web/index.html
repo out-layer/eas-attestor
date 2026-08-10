@@ -4,6 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TEE-attested data → EAS | OutLayer</title>
+<meta name="description" content="Publish verifiable EVM data to the Ethereum Attestation Service, signed inside an Intel TDX enclave on OutLayer.">
+
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+
+<!-- Absolute URLs: crawlers fetch these without the page's base, so a relative path yields no card. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OutLayer">
+<meta property="og:url" content="https://eas.outlayer.ai/">
+<meta property="og:title" content="TEE-attested data on EAS">
+<meta property="og:description" content="Publish verifiable EVM data to the Ethereum Attestation Service, signed inside an Intel TDX enclave.">
+<meta property="og:image" content="https://eas.outlayer.ai/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="TEE-attested data on EAS — OutLayer">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TEE-attested data on EAS">
+<meta name="twitter:description" content="Publish verifiable EVM data to the Ethereum Attestation Service, signed inside an Intel TDX enclave.">
+<meta name="twitter:image" content="https://eas.outlayer.ai/og.png">
 <style>
   :root {
     --accent: #cc6600;
@@ -220,9 +240,23 @@
   <h2><b>5</b> How to run it</h2>
   <div class="row">
     <div>
-      <label for="project">OutLayer project <span style="opacity:.7">(owner/name)</span></label>
-      <input id="project" placeholder="owner.near/eas-attestor" spellcheck="false">
+      <label for="nearNetwork">OutLayer network</label>
+      <select id="nearNetwork">
+        <option value="mainnet" selected>NEAR mainnet — api.outlayer.ai</option>
+        <option value="testnet">NEAR testnet — testnet-api.outlayer.ai</option>
+      </select>
     </div>
+    <div>
+      <label for="project">OutLayer project <span style="opacity:.7">(owner/name)</span></label>
+      <input id="project" spellcheck="false">
+    </div>
+  </div>
+  <p class="hint">
+    This is the network the <b>job runs on</b>, and it is independent of the chain you attest to —
+    a worker on NEAR mainnet can perfectly well write an attestation to Base Sepolia. Payment keys
+    and secrets belong to one network, so they must match the choice here.
+  </p>
+  <div class="row" style="margin-top:12px">
     <div>
       <label for="paymentKey">Payment key <span style="opacity:.7">(enables the HTTPS path)</span></label>
       <input id="paymentKey" type="password" placeholder="owner:nonce:secret" spellcheck="false"
@@ -335,8 +369,28 @@ const PRESETS = {
   },
 };
 
+// The OutLayer side is a different axis from the EVM chain above: the job runs on one of these
+// networks and can attest to any chain from either.
+const NEAR_NETWORKS = {
+  mainnet: { api: "https://api.outlayer.ai",         project: "zavodil.near/eas-attestor",    account: "zavodil.near" },
+  testnet: { api: "https://testnet-api.outlayer.ai", project: "zavodil.testnet/eas-attestor", account: "zavodil.testnet" },
+};
+
 const $ = (id) => document.getElementById(id);
 let collectors = [];
+
+const nearNet = () => NEAR_NETWORKS[$("nearNetwork").value] || NEAR_NETWORKS.mainnet;
+
+/// Keep the project and secrets owner pointing at the selected network, but never overwrite
+/// something the visitor typed themselves.
+function applyNetworkDefaults(previous) {
+  const now = nearNet();
+  const prev = NEAR_NETWORKS[previous];
+  const p = $("project");
+  if (!p.value.trim() || (prev && p.value.trim() === prev.project)) p.value = now.project;
+  const a = $("secretsAccount");
+  if (!a.value.trim() || (prev && a.value.trim() === prev.account)) a.value = now.account;
+}
 
 // ---- schema parsing --------------------------------------------------------
 
@@ -533,10 +587,11 @@ function sync() {
 
 function buildCurl() {
   const { job } = buildJob("dry_run");
-  const project = $("project").value.trim() || "OWNER.near/eas-attestor";
-  const net = NETWORKS[$("network").value];
-  const api = net.testnet ? "https://testnet-api.outlayer.ai" : "https://api.outlayer.ai";
-  const body = JSON.stringify(job);
+  const project = $("project").value.trim() || nearNet().project;
+  const api = nearNet().api;
+  // The API takes the job under an `input` envelope — sending the job alone is rejected for a
+  // missing field, so the copyable command has to carry the same wrapper the page sends.
+  const body = JSON.stringify(buildEnvelope(job), null, 2);
   return [
     `curl -X POST ${api}/call/${project} \\`,
     `  -H 'Content-Type: application/json' \\`,
@@ -663,7 +718,7 @@ async function run(mode) {
     return;
   }
 
-  const api = net.testnet ? "https://testnet-api.outlayer.ai" : "https://api.outlayer.ai";
+  const api = nearNet().api;
   setStatus("info", `Running <code>${mode}</code> in the enclave…`);
   try {
     const { envelope, output } = await callApi(api, project, paymentKey, job);
@@ -682,14 +737,16 @@ async function run(mode) {
 // The coordinator takes the job under an `input` envelope, alongside the reference to the secrets
 // that carry the signing key. We always run async and poll: a synchronous call can outlive the
 // ~100s edge timeout in front of the API and would be cut off mid-execution.
-async function callApi(api, project, paymentKey, job) {
-  const body = {
-    input: job,
-    async: true,
-  };
+function buildEnvelope(job) {
+  const body = { input: job, async: true };
   const profile = $("secretsProfile").value.trim();
   const account = $("secretsAccount").value.trim();
   if (profile && account) body.secrets_ref = { profile, account_id: account };
+  return body;
+}
+
+async function callApi(api, project, paymentKey, job) {
+  const body = buildEnvelope(job);
 
   const started = await request(`${api}/call/${project}`, {
     method: "POST",
@@ -788,6 +845,10 @@ $("openSecrets").onclick = () => {
 $("addCollector").onclick = () => { collectors.push({ type: "erc20_total_supply" }); render(); };
 $("schemaDef").oninput = render;
 $("network").onchange = sync;
+$("nearNetwork").onchange = (() => {
+  let previous = "mainnet";
+  return () => { applyNetworkDefaults(previous); previous = $("nearNetwork").value; sync(); };
+})();
 $("keyMode").onchange = sync;
 ["schemaUid", "refUid", "keyEnv", "project"].forEach((id) => { $(id).oninput = sync; });
 $("runDry").onclick = () => run("dry_run");
@@ -806,7 +867,12 @@ $("runAttest").onclick = () => run("attest");
   if (q.get("collect")) {
     try { collectors = JSON.parse(atob(q.get("collect"))); } catch { /* ignore a malformed link */ }
   }
+  if (q.get("near") && NEAR_NETWORKS[q.get("near")]) $("nearNetwork").value = q.get("near");
 })();
+
+// Fill in the project and secrets owner for the selected network before the first render, so the
+// form is runnable on arrival rather than after two edits.
+applyNetworkDefaults(null);
 
 if (!collectors.length) applyPreset("por-xchain");
 render();

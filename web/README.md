@@ -26,7 +26,10 @@ subdomain.
 ## What it needs
 
 - **A deployed project.** The page calls `POST /call/{owner}/{project}`, so `eas-attestor` must be
-  registered on-chain first — see [../DEPLOYMENT.md](../DEPLOYMENT.md).
+  registered on-chain first — see [../DEPLOYMENT.md](../DEPLOYMENT.md). The OutLayer network picker
+  (NEAR mainnet by default, testnet the other option) selects which API and which project the run
+  goes to; it is a separate axis from the EVM chain being attested, so a job on mainnet can write to
+  a testnet chain and vice versa.
 - **A payment key**, entered by the visitor, in `owner:nonce:key` form. It is used only by the
   visitor's own browser to authorize their run; the page stores nothing and sends it nowhere else.
   Scope the key to this project before using it.
