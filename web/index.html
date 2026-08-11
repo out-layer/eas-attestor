@@ -421,6 +421,18 @@ const keyStore = {
 
 const nearNet = () => NEAR_NETWORKS[$("nearNetwork").value] || NEAR_NETWORKS.mainnet;
 
+// The schema survives reloads: the definition is chain-agnostic, but a UID is the registry's
+// hash of it PER CHAIN — restoring a UID across chains would point attestations at a schema
+// that does not exist there, so UIDs are stored and restored per EVM network.
+const schemaStore = {
+  defSlot: "eas-attestor.schema-def",
+  uidSlot: (chain) => `eas-attestor.schema-uid.${chain}`,
+  saveDef(v) { try { localStorage.setItem(this.defSlot, v); } catch { /* private mode */ } },
+  loadDef() { try { return localStorage.getItem(this.defSlot) || ""; } catch { return ""; } },
+  saveUid(chain, v) { try { localStorage.setItem(this.uidSlot(chain), v); } catch { /* private mode */ } },
+  loadUid(chain) { try { return localStorage.getItem(this.uidSlot(chain)) || ""; } catch { return ""; } },
+};
+
 /// Keep the SHARED project pointing at the selected network, but never overwrite something the
 /// visitor typed themselves. The secrets owner is deliberately NOT defaulted: the project is
 /// everyone's, the key is yours — it must be the visitor's own account, and pre-filling the
@@ -656,9 +668,11 @@ function buildJob(mode) {
         else if (f === "returns_tee") item.returns = c.returns_tee || "url";
         else if (c[f]) item[f] = c[f];
       }
-      // The quote lives on the API the job ran through, so the link has to name that network's
-      // host — a testnet run pointing at the mainnet API would 404 forever.
-      if (c.type === "tee_attestation") item.api_base = nearNet().api;
+      // The guest appends /attestations/by-call/{id} to this base. app.outlayer.ai serves the
+      // same path as a human page (it resolves the call id and shows the verifiable record), so
+      // the link readers meet on easscan is the dashboard, not raw JSON. A call id is a UUID —
+      // the resolver finds the right network by itself, no network hint needed in the URL.
+      if (c.type === "tee_attestation") item.api_base = "https://app.outlayer.ai";
       if (c.chainId) item.chain_id = Number(c.chainId);
       const rpcs = (c.rpcs || "").split("\n").map((s) => s.trim()).filter(Boolean);
       if (rpcs.length) item.rpcs = rpcs;
@@ -732,16 +746,37 @@ function setStatus(kind, html) {
   s.innerHTML = html;
 }
 
+// The raw attestation path serves JSON for machines; app.outlayer.ai/attestation/{task_id} is
+// the same record with in-browser quote verification and the full run details. The task id only
+// exists inside the attestation record, so fetch it and swap the link in when it answers — on
+// any failure (record not written yet, offline) the raw link stays and is still correct.
+async function upgradeQuoteLink(slotId, api, path) {
+  try {
+    const r = await fetch(api + path);
+    if (!r.ok) return;
+    const att = await r.json();
+    if (!att || att.task_id == null) return;
+    const el = document.getElementById(slotId);
+    if (!el) return;
+    const url = `https://app.outlayer.ai/attestation/${att.task_id}?network=${$("nearNetwork").value}`;
+    el.innerHTML = `Verified in the enclave — TDX quote, hashes and the full run record:
+      <a href="${url}" target="_blank" rel="noopener">app.outlayer.ai/attestation/${att.task_id}</a>`;
+  } catch { /* keep the raw link */ }
+}
+
 function renderResult(out, netName, envelope, api) {
   const net = NETWORKS[netName];
   const host = $("result");
   host.innerHTML = "";
 
   // The platform records a TEE quote per execution; surface it whatever the job itself returned.
-  const quoteLink = envelope && envelope.attestation_url
-    ? `<p class="hint" style="margin:10px 0 0">Intel TDX quote for this exact run:
+  // Render the raw JSON path first and upgrade it to the human page once the record answers.
+  const quoteId = envelope && envelope.attestation_url ? "quote-link-slot" : null;
+  const quoteLink = quoteId
+    ? `<p class="hint" id="${quoteId}" style="margin:10px 0 0">Intel TDX quote for this exact run:
         <a href="${escapeHtml(api + envelope.attestation_url)}" target="_blank" rel="noopener">${escapeHtml(envelope.attestation_url)}</a></p>`
     : "";
+  if (quoteId) upgradeQuoteLink(quoteId, api, envelope.attestation_url);
 
   if (!out || typeof out !== "object") {
     host.innerHTML = `<p class="hint" style="margin:0">The worker returned nothing readable.</p>${quoteLink}`;
@@ -754,15 +789,27 @@ function renderResult(out, netName, envelope, api) {
 
   const parts = [];
   if (out.tx_hash) {
+    // register_schema signs with the same key but reports the address as `registrant`,
+    // not `attester` — pick whichever the mode produced instead of printing undefined.
+    const isReg = out.mode === "register_schema";
+    const signerAddr = out.attester || out.registrant;
+    const addrLink = signerAddr
+      ? ` · <a href="https://${net.scan}/address/${escapeHtml(signerAddr)}" target="_blank" rel="noopener">${isReg ? "registrant" : "attester"} on ${net.scan}</a>`
+      : "";
     parts.push(`<p style="margin:0 0 10px">
-      <b>Attestation sent.</b>
-      <a href="https://${net.explorer}/tx/${out.tx_hash}" target="_blank" rel="noopener">transaction</a> ·
-      <a href="https://${net.scan}/address/${out.attester}" target="_blank" rel="noopener">attester on ${net.scan}</a>
+      <b>${isReg ? "Schema registration sent." : "Attestation sent."}</b>
+      <a href="https://${net.explorer}/tx/${escapeHtml(out.tx_hash)}" target="_blank" rel="noopener">transaction</a>${addrLink}
     </p>`);
   }
   if (out.predicted_schema_uid) {
-    parts.push(`<p style="margin:0 0 10px"><b>Schema registered.</b> Its UID —
-      paste it into step 2 to start attesting:</p>
+    // Land the UID straight in step 2 and remember it, so "Attest on-chain" works
+    // without a copy-paste hop — and still works after a reload.
+    $("schemaUid").value = out.predicted_schema_uid;
+    schemaStore.saveUid(netName, out.predicted_schema_uid);
+    sync();
+    parts.push(`<p style="margin:0 0 10px"><b>Schema registered.</b> Its UID went into
+      <a href="#schemaUid">step 2</a> — attest once the transaction confirms, or
+      <a href="https://${net.scan}/schema/view/${escapeHtml(out.predicted_schema_uid)}" target="_blank" rel="noopener">open it on ${net.scan}</a>:</p>
       <pre>${escapeHtml(out.predicted_schema_uid)}</pre>`);
   }
   if (out.attester && !out.tx_hash) {
@@ -834,7 +881,7 @@ async function run(mode) {
     }
   }
   if (mode === "attest" && !$("schemaUid").value.trim()) {
-    setStatus("err", "Attesting needs a schema UID. Register the schema first, then paste its UID into step 2.");
+    setStatus("err", `Attesting needs a schema UID. Register the schema first — its UID fills into <a href="#schemaUid">step 2</a> by itself — or paste an existing one there.`);
     return;
   }
   if (!project) {
@@ -989,7 +1036,15 @@ $("openSecrets").onclick = () => {
 
 $("addCollector").onclick = () => { collectors.push({ type: "erc20_total_supply" }); render(); };
 $("schemaDef").oninput = render;
-$("network").onchange = sync;
+$("network").onchange = () => {
+  // A UID belongs to one chain's registry — carry over the one saved for the chain
+  // we land on (or clear the field: the previous chain's UID is wrong everywhere else).
+  $("schemaUid").value = schemaStore.loadUid($("network").value);
+  sync();
+};
+$("schemaDef").addEventListener("input", () => schemaStore.saveDef($("schemaDef").value));
+$("schemaUid").addEventListener("input", () =>
+  schemaStore.saveUid($("network").value, $("schemaUid").value.trim()));
 function updateForgetKeyButton() {
   const saved = keyStore.load($("nearNetwork").value);
   $("forgetKey").style.display = saved ? "" : "none";
@@ -1036,6 +1091,17 @@ $("runAttest").onclick = () => run("attest");
     try { collectors = JSON.parse(atob(q.get("collect"))); } catch { /* ignore a malformed link */ }
   }
   if (q.get("near") && NEAR_NETWORKS[q.get("near")]) $("nearNetwork").value = q.get("near");
+})();
+
+// Restore the saved schema AFTER the URL prefill, and only into fields the link left
+// untouched — a shared link describes a specific setup and must win over this browser's past.
+(function restoreSchema() {
+  const d = $("schemaDef");
+  const savedDef = schemaStore.loadDef();
+  if (savedDef && d.value === d.defaultValue) d.value = savedDef;
+  if (!$("schemaUid").value.trim()) {
+    $("schemaUid").value = schemaStore.loadUid($("network").value);
+  }
 })();
 
 // Fill in the project and secrets owner for the selected network before the first render, so the
