@@ -222,7 +222,7 @@
       <input id="secretsProfile" value="eas" spellcheck="false">
     </div>
     <div>
-      <label for="secretsAccount">Secrets owner <span style="opacity:.7">(the NEAR account that stored them)</span></label>
+      <label for="secretsAccount">Secrets owner <span style="opacity:.7">(your account — the one that stored the key, not the project owner)</span></label>
       <input id="secretsAccount" placeholder="you.near" spellcheck="false">
     </div>
   </div>
@@ -232,9 +232,10 @@
   </div>
   <p class="hint">
     Secrets live on app.outlayer.ai, which holds the wallet and the enclave's public key: the value
-    is encrypted in your browser and stored on-chain by your wallet. The form there does not read
-    settings from a link yet, so enter these by hand — and check the dashboard is on the same network
-    as the run. The project must already exist on-chain, otherwise the transaction reverts with
+    is encrypted in your browser and stored on-chain by your wallet. The link pre-fills the project,
+    profile and secret name — check the dashboard's network switch (top bar) matches the run, the
+    values match the table below, and sign with <b>your</b> wallet: whoever stores the secret owns
+    it. The project must already exist on-chain, otherwise the transaction reverts with
     <code>Project '…' does not exist</code>. A private key must never travel in a URL.
   </p>
   <div id="secretRecipe"></div>
@@ -394,8 +395,8 @@ const PRESETS = {
 // The OutLayer side is a different axis from the EVM chain above: the job runs on one of these
 // networks and can attest to any chain from either.
 const NEAR_NETWORKS = {
-  mainnet: { api: "https://api.outlayer.ai",         project: "zavodil.near/eas-attestor",    account: "zavodil.near" },
-  testnet: { api: "https://testnet-api.outlayer.ai", project: "zavodil.testnet/eas-attestor", account: "zavodil.testnet" },
+  mainnet: { api: "https://api.outlayer.ai",         project: "zavodil.near/eas-attestor",    ownerPlaceholder: "you.near" },
+  testnet: { api: "https://testnet-api.outlayer.ai", project: "zavodil.testnet/eas-attestor", ownerPlaceholder: "you.testnet" },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -420,15 +421,16 @@ const keyStore = {
 
 const nearNet = () => NEAR_NETWORKS[$("nearNetwork").value] || NEAR_NETWORKS.mainnet;
 
-/// Keep the project and secrets owner pointing at the selected network, but never overwrite
-/// something the visitor typed themselves.
+/// Keep the SHARED project pointing at the selected network, but never overwrite something the
+/// visitor typed themselves. The secrets owner is deliberately NOT defaulted: the project is
+/// everyone's, the key is yours — it must be the visitor's own account, and pre-filling the
+/// project owner's here just made every dry run fail with a missing key.
 function applyNetworkDefaults(previous) {
   const now = nearNet();
   const prev = NEAR_NETWORKS[previous];
   const p = $("project");
   if (!p.value.trim() || (prev && p.value.trim() === prev.project)) p.value = now.project;
-  const a = $("secretsAccount");
-  if (!a.value.trim() || (prev && a.value.trim() === prev.account)) a.value = now.account;
+  $("secretsAccount").placeholder = now.ownerPlaceholder;
 }
 
 // ---- schema parsing --------------------------------------------------------
@@ -694,8 +696,8 @@ function sync() {
 
   $("curlCmd").textContent = buildCurl();
 
-  // Mirror the exact values to type into the dashboard form. The link cannot fill them in, so
-  // showing them here is the difference between "go figure it out" and copy-paste.
+  // Mirror the exact values the dashboard form should end up with. The link pre-fills them, but
+  // the table lets the visitor cross-check what a foreign link put into their secrets form.
   const tee = $("keyMode").value === "tee";
   $("secretRecipe").innerHTML = `<table>
     <tr><th>Field in the dashboard</th><th>Value</th></tr>
@@ -837,6 +839,13 @@ async function run(mode) {
   }
   if (!project) {
     setStatus("err", "Enter the OutLayer project that runs the attestor, as <code>owner/name</code>.");
+    return;
+  }
+  // Without both coordinates the envelope silently carries no secrets_ref, and the enclave then
+  // fails with a missing key far from the field that caused it. A dry run is allowed keyless —
+  // its result explains what to fund. The project is shared; the key lookup is owner + profile.
+  if (mode !== "dry_run" && !(($("secretsProfile").value.trim()) && ($("secretsAccount").value.trim()))) {
+    setStatus("err", "Signing needs the secret's coordinates: the profile and the secrets owner — <b>your</b> NEAR account, the one that stored the key. The project owner's account will not find it.");
     return;
   }
   if (!paymentKey) {
