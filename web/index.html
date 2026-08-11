@@ -431,6 +431,16 @@ const schemaStore = {
   loadDef() { try { return localStorage.getItem(this.defSlot) || ""; } catch { return ""; } },
   saveUid(chain, v) { try { localStorage.setItem(this.uidSlot(chain), v); } catch { /* private mode */ } },
   loadUid(chain) { try { return localStorage.getItem(this.uidSlot(chain)) || ""; } catch { return ""; } },
+  // Collectors travel with the definition — restoring one without the other leaves the form
+  // complaining about a field/source count mismatch it created itself.
+  collSlot: "eas-attestor.collectors",
+  saveColl(list) { try { localStorage.setItem(this.collSlot, JSON.stringify(list)); } catch { /* private mode */ } },
+  loadColl() {
+    try {
+      const v = JSON.parse(localStorage.getItem(this.collSlot) || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch { return []; }
+  },
 };
 
 /// Keep the SHARED project pointing at the selected network, but never overwrite something the
@@ -634,6 +644,9 @@ function render() {
   const host = $("collectors");
   host.innerHTML = "";
   collectors.forEach((c, i) => host.appendChild(collectorRow(c, i)));
+  // Every collector mutation funnels through here, so this is the one place that keeps the
+  // stored copy current for the next visit.
+  if (collectors.length) schemaStore.saveColl(collectors);
   sync();
   checkAddresses();
 }
@@ -1109,6 +1122,17 @@ function applyPreset(name) {
     if (copy.chainId && PUBLIC_RPCS[copy.chainId]) copy.rpcs = PUBLIC_RPCS[copy.chainId].join("\n");
     return copy;
   });
+  // Every preset carries the TEE link, whether or not it lists one: the attestation pointing
+  // at its own enclave proof IS the OutLayer pitch, and a preset without it produces a record
+  // that looks like any other oracle's. Appended last on both sides — fields and sources map
+  // one-to-one by position.
+  if (!collectors.some((c) => c.type === "tee_attestation")) {
+    $("schemaDef").value += ",string teeAttestation";
+    collectors.push({ type: "tee_attestation", returns_tee: "url" });
+  }
+  // A programmatic set fires no input event, so persist explicitly — otherwise a reload
+  // restores whatever schema was saved before the preset click.
+  schemaStore.saveDef($("schemaDef").value);
   render();
 }
 
@@ -1203,6 +1227,8 @@ $("runAttest").onclick = () => run("attest");
   if (!$("schemaUid").value.trim()) {
     $("schemaUid").value = schemaStore.loadUid($("network").value);
   }
+  // Restored collectors also keep the default preset below from clobbering the saved schema.
+  if (!collectors.length) collectors = schemaStore.loadColl();
 })();
 
 // Fill in the project and secrets owner for the selected network before the first render, so the
