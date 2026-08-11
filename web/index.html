@@ -265,6 +265,9 @@
       <label for="paymentKey">Payment key <span style="opacity:.7">(enables the HTTPS path)</span></label>
       <input id="paymentKey" type="password" placeholder="owner:nonce:secret" spellcheck="false"
              autocomplete="off">
+      <div class="actions" style="margin-top:8px">
+        <button class="small" id="forgetKey" style="display:none">Forget saved key</button>
+      </div>
     </div>
   </div>
   <p class="hint">
@@ -397,6 +400,23 @@ const NEAR_NETWORKS = {
 
 const $ = (id) => document.getElementById(id);
 let collectors = [];
+
+// A payment key is a bearer credential against a USDC balance, so it is kept only in this
+// browser and only after it has actually worked. Keys are stored per OutLayer network: a
+// testnet key is worthless on mainnet and silently filling it in would just produce a
+// confusing auth failure.
+const keyStore = {
+  slot: (net) => `eas-attestor.payment-key.${net}`,
+  load(net) {
+    try { return localStorage.getItem(this.slot(net)) || ""; } catch { return ""; }
+  },
+  save(net, value) {
+    try { localStorage.setItem(this.slot(net), value); } catch { /* private mode, no storage */ }
+  },
+  forget(net) {
+    try { localStorage.removeItem(this.slot(net)); } catch { /* nothing to do */ }
+  },
+};
 
 const nearNet = () => NEAR_NETWORKS[$("nearNetwork").value] || NEAR_NETWORKS.mainnet;
 
@@ -754,11 +774,21 @@ function renderResult(out, netName, envelope, api) {
       </div></div>`);
   } else if (out.attester) {
     parts.push(`<p class="hint" style="margin:10px 0 0">Attester: <code>${escapeHtml(out.attester)}</code></p>`);
+  } else if (out.mode === "dry_run") {
+    // The run worked but no key was attached, so there is no address to show. Silence here reads
+    // as "nothing to fund", which is the wrong conclusion.
+    parts.push(`<div class="status show info" style="margin:0 0 12px">
+      No signing key was attached, so there is no attester address yet. The secret is looked up by
+      <b>owner + profile</b>: check that <code>${escapeHtml($("secretsAccount").value.trim() || "(empty)")}</code>
+      is the account that actually stored it — often not the same account that owns the project — and
+      that the profile <code>${escapeHtml($("secretsProfile").value.trim())}</code> and the secret
+      name <code>${escapeHtml($("keyEnv").value.trim())}</code> match what you created.
+    </div>`);
   }
   if (Array.isArray(out.collected) && out.collected.length) {
     const rows = out.collected.map((c) => `<tr>
       <td>${escapeHtml(c.field || "")}<br><span class="hint">${escapeHtml(c.type || "")}</span></td>
-      <td class="mono">${escapeHtml(String(c.value_hex ?? c.code_hash ?? c.value ?? ""))}</td>
+      <td class="mono">${escapeHtml(String(c.attestation_url ?? c.value_hex ?? c.code_hash ?? c.value ?? ""))}</td>
       <td class="mono">${escapeHtml(String(c.chain_id ?? "—"))}<br>${escapeHtml(String(c.block ?? ""))}</td>
       <td class="hint">${escapeHtml((c.agreed_by || []).join(", ")) || "—"}</td>
     </tr>`).join("");
@@ -824,6 +854,9 @@ async function run(mode) {
   setStatus("info", `Running <code>${mode}</code> in the enclave…`);
   try {
     const { envelope, output } = await callApi(api, project, paymentKey, job);
+    // It authenticated, so it is worth keeping for next time.
+    keyStore.save($("nearNetwork").value, paymentKey);
+    updateForgetKeyButton();
     if (envelope && envelope.error && !output) {
       setStatus("err", `The platform reported: ${escapeHtml(envelope.error)}`);
     } else {
@@ -948,9 +981,32 @@ $("openSecrets").onclick = () => {
 $("addCollector").onclick = () => { collectors.push({ type: "erc20_total_supply" }); render(); };
 $("schemaDef").oninput = render;
 $("network").onchange = sync;
+function updateForgetKeyButton() {
+  const saved = keyStore.load($("nearNetwork").value);
+  $("forgetKey").style.display = saved ? "" : "none";
+}
+
+// Swap in the key belonging to the newly selected network — including clearing the box when that
+// network has none, so a key is never carried across from the other one.
+function loadPaymentKeyForNetwork() {
+  $("paymentKey").value = keyStore.load($("nearNetwork").value);
+  updateForgetKeyButton();
+}
+
+$("forgetKey").onclick = () => {
+  keyStore.forget($("nearNetwork").value);
+  $("paymentKey").value = "";
+  updateForgetKeyButton();
+};
+
 $("nearNetwork").onchange = (() => {
   let previous = "mainnet";
-  return () => { applyNetworkDefaults(previous); previous = $("nearNetwork").value; sync(); };
+  return () => {
+    applyNetworkDefaults(previous);
+    previous = $("nearNetwork").value;
+    loadPaymentKeyForNetwork();
+    sync();
+  };
 })();
 $("keyMode").onchange = sync;
 ["schemaUid", "refUid", "keyEnv", "project"].forEach((id) => { $(id).oninput = sync; });
@@ -976,6 +1032,7 @@ $("runAttest").onclick = () => run("attest");
 // Fill in the project and secrets owner for the selected network before the first render, so the
 // form is runnable on arrival rather than after two edits.
 applyNetworkDefaults(null);
+loadPaymentKeyForNetwork();
 
 if (!collectors.length) applyPreset("sepolia-supply");
 render();
