@@ -160,6 +160,7 @@
 <section>
   <h2><b>2</b> What to attest</h2>
   <div class="preset-row">
+    <button class="small" data-preset="sepolia-supply">Testnet demo (Base Sepolia)</button>
     <button class="small" data-preset="por-xchain">Cross-chain proof of reserves</button>
     <button class="small" data-preset="supply">Token supply snapshot</button>
     <button class="small" data-preset="bytecode">Contract bytecode fact</button>
@@ -313,12 +314,12 @@
 
 // EAS deployments, verified against the official eas-contracts repository.
 const NETWORKS = {
-  "base":         { chainId: 8453,     eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base.easscan.org",         explorer: "basescan.org",             testnet: false },
-  "base-sepolia": { chainId: 84532,    eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base-sepolia.easscan.org", explorer: "sepolia.basescan.org",     testnet: true  },
-  "optimism":     { chainId: 10,       eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "optimism.easscan.org",    explorer: "optimistic.etherscan.io",  testnet: false },
-  "arbitrum":     { chainId: 42161,    eas: "0xbD75f629A22Dc1ceD33dDA0b68c546A1c035c458", registry: "0xA310da9c5B885E7fb3fbA9D66E9Ba6Df512b78eB", scan: "arbitrum.easscan.org",    explorer: "arbiscan.io",              testnet: false },
-  "ethereum":     { chainId: 1,        eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587", registry: "0xA7b39296258348C78294F95B872b282326A97BDF", scan: "easscan.org",             explorer: "etherscan.io",             testnet: false },
-  "sepolia":      { chainId: 11155111, eas: "0xC2679fBD37d54388Ce493F1DB75320D236e1815e", registry: "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0", scan: "sepolia.easscan.org",     explorer: "sepolia.etherscan.io",     testnet: true  },
+  "base":         { defaultRpcs: ["https://mainnet.base.org"], chainId: 8453,     eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base.easscan.org",         explorer: "basescan.org",             testnet: false },
+  "base-sepolia": { defaultRpcs: ["https://sepolia.base.org"], chainId: 84532,    eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "base-sepolia.easscan.org", explorer: "sepolia.basescan.org",     testnet: true  },
+  "optimism":     { defaultRpcs: ["https://mainnet.optimism.io"], chainId: 10,       eas: "0x4200000000000000000000000000000000000021", registry: "0x4200000000000000000000000000000000000020", scan: "optimism.easscan.org",    explorer: "optimistic.etherscan.io",  testnet: false },
+  "arbitrum":     { defaultRpcs: ["https://arb1.arbitrum.io/rpc"], chainId: 42161,    eas: "0xbD75f629A22Dc1ceD33dDA0b68c546A1c035c458", registry: "0xA310da9c5B885E7fb3fbA9D66E9Ba6Df512b78eB", scan: "arbitrum.easscan.org",    explorer: "arbiscan.io",              testnet: false },
+  "ethereum":     { defaultRpcs: ["https://ethereum-rpc.publicnode.com"], chainId: 1,        eas: "0xA1207F3BBa224E2c9c3c6D5aF63D0eb1582Ce587", registry: "0xA7b39296258348C78294F95B872b282326A97BDF", scan: "easscan.org",             explorer: "etherscan.io",             testnet: false },
+  "sepolia":      { defaultRpcs: ["https://ethereum-sepolia-rpc.publicnode.com"], chainId: 11155111, eas: "0xC2679fBD37d54388Ce493F1DB75320D236e1815e", registry: "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0", scan: "sepolia.easscan.org",     explorer: "sepolia.etherscan.io",     testnet: true  },
 };
 
 // Public RPC sets used when a source targets a chain other than the attestation's own.
@@ -345,8 +346,21 @@ const FIELD_LABEL = {
   returns_tee: "Form",
 };
 
+// Each preset names the chain its addresses actually live on. A contract address is only
+// meaningful on one chain: pointing a Base-mainnet token at Base Sepolia makes eth_call return
+// nothing, which is a confusing way to learn you picked the wrong network.
 const PRESETS = {
+  "sepolia-supply": {
+    network: "base-sepolia",
+    schema: "uint256 wethSupply,string teeAttestation,uint64 blockNumber",
+    collectors: [
+      { type: "erc20_total_supply", token: "0x4200000000000000000000000000000000000006", chainId: "" },
+      { type: "tee_attestation", returns_tee: "url" },
+      { type: "block_number" },
+    ],
+  },
   "por-xchain": {
+    network: "base",
     schema: "uint256 lockedOnEthereum,uint256 mintedSupply,uint64 blockNumber",
     collectors: [
       { type: "erc20_balance", token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -356,6 +370,7 @@ const PRESETS = {
     ],
   },
   "supply": {
+    network: "base",
     schema: "uint256 totalSupply,uint64 blockNumber",
     collectors: [
       { type: "erc20_total_supply", token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", chainId: "" },
@@ -363,6 +378,7 @@ const PRESETS = {
     ],
   },
   "bytecode": {
+    network: "base",
     schema: "bytes32 codeHash,bool isContract,uint64 blockNumber",
     collectors: [
       { type: "eth_code", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", returns_code: "code_hash", chainId: "" },
@@ -475,6 +491,11 @@ function collectorRow(c, i) {
     el.appendChild(row);
   }
 
+  const warn = document.createElement("p");
+  warn.className = "hint";
+  warn.id = `warn-${i}`;
+  el.appendChild(warn);
+
   if (c.type !== "block_number") {
     const adv = document.createElement("details");
     adv.className = "adv";
@@ -516,11 +537,71 @@ function collectorRow(c, i) {
   return el;
 }
 
+// A contract address only means something on one chain, and the failure mode is silent: a token
+// address from Base mainnet simply has no code on Base Sepolia, so eth_call comes back empty and
+// the run dies deep in the job. Check it here, while the field is still in front of the user.
+const codeCache = new Map();
+
+function collectorRpcs(c) {
+  const own = (c.rpcs || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  if (own.length) return own;
+  const cid = Number(c.chainId);
+  if (cid && PUBLIC_RPCS[cid]) return PUBLIC_RPCS[cid];
+  return NETWORKS[$("network").value].defaultRpcs;
+}
+
+async function hasCode(rpc, address) {
+  const key = `${rpc}|${address.toLowerCase()}`;
+  if (codeCache.has(key)) return codeCache.get(key);
+  const p = (async () => {
+    try {
+      const res = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getCode", params: [address, "latest"] }),
+      });
+      const j = await res.json();
+      if (typeof j.result !== "string") return null;   // unknown, not "absent"
+      return j.result !== "0x" && j.result !== "";
+    } catch {
+      return null;   // a dead RPC is not evidence about the address
+    }
+  })();
+  codeCache.set(key, p);
+  return p;
+}
+
+/// Flag collectors whose address holds no code on the chain they will be read from.
+async function checkAddresses() {
+  const checks = collectors.map(async (c, i) => {
+    const field = ["erc20_balance", "erc20_total_supply"].includes(c.type)
+      ? "token"
+      : ["native_balance", "eth_code"].includes(c.type)
+      ? null                       // an EOA legitimately has no code
+      : c.type === "evm_call"
+      ? "to"
+      : null;
+    if (!field || !/^0x[0-9a-fA-F]{40}$/.test(c[field] || "")) return;
+    const rpc = collectorRpcs(c)[0];
+    const present = await hasCode(rpc, c[field]);
+    const el = document.getElementById(`warn-${i}`);
+    if (!el) return;
+    if (present === false) {
+      const where = c.chainId ? `chain ${c.chainId}` : $("network").value;
+      el.innerHTML = `<span style="color:var(--err)">No contract at this address on ${escapeHtml(where)} — the same token has a different address on every chain, so this read would come back empty.</span>`;
+    } else {
+      el.innerHTML = "";
+    }
+  });
+  await Promise.all(checks);
+}
+
 function render() {
   const host = $("collectors");
   host.innerHTML = "";
   collectors.forEach((c, i) => host.appendChild(collectorRow(c, i)));
   sync();
+  checkAddresses();
 }
 
 // ---- job JSON --------------------------------------------------------------
@@ -547,9 +628,15 @@ function buildJob(mode) {
       const item = { type: c.type };
       const spec = SOURCE_TYPES[c.type];
       for (const f of spec.fields) {
+        // The UI keeps the per-type "returns" choice under distinct keys so the dropdowns do not
+        // collide; the job format has a single `returns`.
         if (f === "returns_code") item.returns = c.returns_code || "code_hash";
+        else if (f === "returns_tee") item.returns = c.returns_tee || "url";
         else if (c[f]) item[f] = c[f];
       }
+      // The quote lives on the API the job ran through, so the link has to name that network's
+      // host — a testnet run pointing at the mainnet API would 404 forever.
+      if (c.type === "tee_attestation") item.api_base = nearNet().api;
       if (c.chainId) item.chain_id = Number(c.chainId);
       const rpcs = (c.rpcs || "").split("\n").map((s) => s.trim()).filter(Boolean);
       if (rpcs.length) item.rpcs = rpcs;
@@ -825,6 +912,7 @@ function unwrapOutput(envelope) {
 function applyPreset(name) {
   const p = PRESETS[name];
   if (!p) return;
+  if (p.network && NETWORKS[p.network]) $("network").value = p.network;
   $("schemaDef").value = p.schema;
   collectors = p.collectors.map((c) => {
     const copy = Object.assign({}, c);
@@ -889,7 +977,7 @@ $("runAttest").onclick = () => run("attest");
 // form is runnable on arrival rather than after two edits.
 applyNetworkDefaults(null);
 
-if (!collectors.length) applyPreset("por-xchain");
+if (!collectors.length) applyPreset("sepolia-supply");
 render();
 </script>
 </body>

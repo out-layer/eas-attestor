@@ -100,8 +100,21 @@ fn eth_call_word(
     let call = json!([{ "to": abi::to_hex_0x(to), "data": abi::to_hex_0x(data) }]);
     let (result, agreed) = rpc::quorum_read(rpcs, "eth_call", call, block, min_agree)?;
     let bytes = abi::hex_to_bytes(&result)?;
+    if bytes.is_empty() {
+        // An eth_call to an address holding no code returns no data at all. Almost always this
+        // means the address belongs to a different chain than the one being read — the same
+        // token has a different address on every network.
+        return Err(format!(
+            "no contract at {} on this chain (eth_call returned no data) — check the address exists on the chain you selected",
+            abi::to_hex_0x(to)
+        ));
+    }
     if bytes.len() < 32 {
-        return Err(format!("eth_call returned {} bytes, expected >= 32", bytes.len()));
+        return Err(format!(
+            "eth_call on {} returned {} bytes, too short to decode a value",
+            abi::to_hex_0x(to),
+            bytes.len()
+        ));
     }
     let mut word = [0u8; 32];
     word.copy_from_slice(&bytes[..32]);
