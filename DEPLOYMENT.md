@@ -19,22 +19,21 @@ free there (faucet gas), and the flow is identical to mainnet.
 ## 2. Register the project on-chain
 
 A project is created by one on-chain call — there is no HTTPS deploy endpoint, and the owner is
-always the caller. The code source is either a GitHub repo+commit or a URL+hash; **there is no
-subdirectory support for the GitHub variant** (the compiler builds from the repo root), so while
-this app lives inside the monorepo, deploy it by URL.
-
-### Quick path — upload the wasm and register it by hash
+always the caller. The code source is the published wasm: its URL and sha256.
 
 ```bash
-outlayer upload target/wasm32-wasip2/release/eas-attestor.wasm   # returns the FastFS URL
-shasum -a 256 target/wasm32-wasip2/release/eas-attestor.wasm     # the hash below
+outlayer upload target/wasm32-wasip2/release/eas-attestor.wasm
+# prints SHA256 and: FastFS URL: https://test.fastfs.io/you.testnet/outlayer.testnet/<sha256>.wasm
+outlayer deploy eas-attestor <FastFS URL>
 ```
+
+The same call by hand:
 
 ```bash
 near call outlayer.testnet create_project '{
   "name": "eas-attestor",
   "source": { "WasmUrl": {
-    "url": "https://<sender>.fastfs.io/<receiver>/<hash>.wasm",
+    "url": "https://test.fastfs.io/you.testnet/outlayer.testnet/<sha256>.wasm",
     "hash": "<sha256 hex>",
     "build_target": "wasm32-wasip2"
   }}
@@ -43,30 +42,13 @@ near call outlayer.testnet create_project '{
 
 The project id becomes `you.testnet/eas-attestor` — that is what the HTTPS API and the web form take.
 
-### Proper path — its own repository
-
-Every other WASI app here is a standalone `out-layer/*` repo added back as a submodule. Once
-`eas-attestor` is extracted the same way, register it from source so the enclave compiles the code
-anyone can read:
-
-```bash
-near call outlayer.near create_project '{
-  "name": "eas-attestor",
-  "source": { "GitHub": {
-    "repo": "out-layer/eas-attestor",
-    "commit": "<full 40-char sha>",
-    "build_target": "wasm32-wasip2"
-  }}
-}' --accountId you.near --deposit 0.1
-```
-
-Later versions: `add_version` + `set_active_version`.
+Later versions: `outlayer deploy eas-attestor <new FastFS URL>`, or `add_version` + `set_active_version`.
 
 ## 3. Create the attester key as a secret
 
 The signing key is an OutLayer secret named by `key_env`. Either way, create it from the dashboard
 secrets page — it holds the wallet and the enclave's public key — and bind it to the project
-(`accessor: {"Project": {"project_id": "you.near/eas-attestor"}}`) so it survives a rename.
+(`accessor: {"Project": {"project_id": "you.near/eas-attestor"}}`).
 `vault_id` must be present in the contract call even when it is `null`.
 
 **Generated in the enclave** (`PROTECTED_EAS_KEY`, spec `hex32`). The spec produces 32 random bytes
